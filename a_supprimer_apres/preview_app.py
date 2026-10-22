@@ -3,6 +3,7 @@ import socketserver
 import json
 import urllib.parse
 import urllib.request
+import urllib.error
 import re
 import html as html_lib
 import oracledb
@@ -10,6 +11,8 @@ import oracledb
 from dashboard_template import render_dashboard
 
 PORT = 5000
+SYNC_API_URL = "http://localhost:8000"
+SYNC_TIMEOUT = 180  # une synchro de 10 matchs peut attendre le quota HenrikDev
 DB_CONFIG = {
     "user": "valo_app",
     "password": "ValoPassword123",
@@ -154,8 +157,41 @@ def get_real_youtube_video(search_term):
         pass
     return "JnA8WfGqZ9c", "Guide Valorant : Crosshair Placement & Gunfight"
 
+def sync_player(riot_id, region):
+    """Relaie vers le /sync du service FastAPI. Retourne (code HTTP, payload JSON)."""
+    if "#" not in riot_id:
+        return 400, {"detail": "Riot ID invalide : attendu Pseudo#TAG."}
+    if region not in ("eu", "na", "ap", "kr"):
+        return 400, {"detail": "Région invalide."}
+    pseudo, tag = riot_id.rsplit("#", 1)
+    url = f"{SYNC_API_URL}/sync/{region}/{urllib.parse.quote(pseudo, safe='')}/{urllib.parse.quote(tag, safe='')}"
+    try:
+        with urllib.request.urlopen(url, timeout=SYNC_TIMEOUT) as resp:
+            return 200, json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode("utf-8"))
+        except Exception:
+            return e.code, {"detail": f"Erreur {e.code} du service de synchro."}
+    except Exception as e:
+        return 502, {"detail": f"Service de synchro injoignable ({SYNC_API_URL}) : {e}"}
+
+
 class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
+        if self.path == "/api/sync":
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                data = json.loads(self.rfile.read(length).decode('utf-8'))
+                code, payload = sync_player(str(data.get("riot_id", "")).strip(), str(data.get("region", "eu")).lower())
+            except Exception as e:
+                code, payload = 400, {"detail": f"Requête invalide : {e}"}
+            self.send_response(code)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))
+            return
+
         if self.path == "/api/chat":
             try:
                 length = int(self.headers.get('Content-Length', 0))
@@ -475,7 +511,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(html.encode("utf-8"))
 
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("", PORT), CustomHandler) as httpd:
+socketserver.ThreadingTCPServer.allow_reuse_address = True
+socketserver.ThreadingTCPServer.daemon_threads = True
+with socketserver.ThreadingTCPServer(("", PORT), CustomHandler) as httpd:
     print(f"Serveur relancé sur http://localhost:{PORT}")
     httpd.serve_forever()

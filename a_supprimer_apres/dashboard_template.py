@@ -129,6 +129,31 @@ TEMPLATE = r"""<!DOCTYPE html>
         .dd-meta { display: block; font-size: 12px; color: var(--muted); }
         .dd-empty { padding: 18px; text-align: center; color: var(--muted); }
 
+        /* --- Actualisation (/sync) ---------------------------------------- */
+        .refresh-btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 9px 16px; border-radius: 999px; cursor: pointer;
+            font: 600 13px var(--body); color: var(--text);
+            background: rgba(34, 211, 238, 0.1); border: 1px solid rgba(34, 211, 238, 0.4);
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        .refresh-btn:hover:not(:disabled) { background: rgba(34, 211, 238, 0.2); box-shadow: 0 0 20px rgba(34, 211, 238, 0.2); }
+        .refresh-btn:disabled { opacity: 0.7; cursor: progress; }
+        .refresh-btn.loading svg { animation: spin 0.9s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .refresh-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+        .refresh-msg { font-size: 12px; color: var(--muted); }
+        .refresh-msg.ok { color: var(--green); }
+        .refresh-msg.err { color: #f87171; }
+        .dd-refresh {
+            flex-shrink: 0; display: grid; place-items: center; width: 30px; height: 30px;
+            border-radius: 50%; border: 1px solid var(--line); background: transparent;
+            color: var(--muted); cursor: pointer;
+        }
+        .dd-refresh:hover:not(:disabled) { color: var(--cyan); border-color: rgba(34, 211, 238, 0.5); }
+        .dd-refresh.loading svg { animation: spin 0.9s linear infinite; }
+        .dd-actions { display: flex; align-items: center; gap: 10px; }
+
         /* --- Badges ------------------------------------------------------- */
         .badge {
             display: inline-block; padding: 4px 9px; border-radius: 999px; border: 1px solid;
@@ -363,6 +388,16 @@ TEMPLATE = r"""<!DOCTYPE html>
                     <span><b>__PLAYERS_COUNT__</b> joueurs en base</span>
                     <span><b>__NB_MATCHS__</b> matchs analysés</span>
                 </div>
+                <div class="refresh-row">
+                    <button type="button" id="refreshBtn" class="refresh-btn" onclick="refreshCurrentPlayer()" title="Récupère les derniers matchs, armes et rang depuis HenrikDev">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
+                        <span id="refreshLabel">Actualiser ce joueur</span>
+                    </button>
+                    <select id="refreshRegion" class="refresh-btn" style="padding:8px 10px;" title="Région du compte">
+                        <option value="eu">EU</option><option value="na">NA</option><option value="ap">AP</option><option value="kr">KR</option>
+                    </select>
+                    <span id="refreshMsg" class="refresh-msg"></span>
+                </div>
             </div>
 
             <div class="card">
@@ -530,12 +565,68 @@ TEMPLATE = r"""<!DOCTYPE html>
                             <span class="dd-id">${highlightMatch(p.riot_id, query)}</span>
                             ${metaParts ? `<span class="dd-meta">${metaParts}</span>` : ''}
                         </div>
-                        <span class="badge ${badgeCls}">${escapeHtml(p.type_profil)}</span>
+                        <div class="dd-actions">
+                            <span class="badge ${badgeCls}">${escapeHtml(p.type_profil)}</span>
+                            <button type="button" class="dd-refresh" title="Actualiser ce joueur"
+                                    onclick="event.stopPropagation(); refreshFromDropdown(this, ${idx})">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
+                            </button>
+                        </div>
                     </div>`;
             }).join('');
 
             searchDropdown.innerHTML = headerHtml + itemsHtml;
             searchDropdown.style.display = 'block';
+        }
+
+        async function syncPlayer(riotId, region) {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ riot_id: riotId, region: region })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || ('Erreur ' + res.status));
+            return data;
+        }
+
+        async function refreshCurrentPlayer() {
+            const btn = document.getElementById('refreshBtn');
+            const label = document.getElementById('refreshLabel');
+            const msg = document.getElementById('refreshMsg');
+            btn.disabled = true;
+            btn.classList.add('loading');
+            label.textContent = 'Synchronisation…';
+            msg.className = 'refresh-msg';
+            msg.textContent = 'Peut prendre jusqu\'à une minute (quota API).';
+            try {
+                const r = await syncPlayer(__JS_PLAYER__, document.getElementById('refreshRegion').value);
+                msg.className = 'refresh-msg ok';
+                msg.textContent = r.matchs_analyses + ' matchs analysés · ' + r.armes_synchronisees + ' armes · ' + r.nouvelles_performances_joueurs_inserees + ' nouvelles perfs. Rechargement…';
+                setTimeout(() => window.location.reload(), 900);
+            } catch (e) {
+                msg.className = 'refresh-msg err';
+                msg.textContent = e.message;
+                label.textContent = 'Actualiser ce joueur';
+                btn.disabled = false;
+                btn.classList.remove('loading');
+            }
+        }
+
+        async function refreshFromDropdown(btn, idx) {
+            const p = currentResults[idx];
+            if (!p) return;
+            btn.disabled = true;
+            btn.classList.add('loading');
+            try {
+                await syncPlayer(p.riot_id, document.getElementById('refreshRegion').value);
+                selectPlayer(p.riot_id);
+            } catch (e) {
+                btn.disabled = false;
+                btn.classList.remove('loading');
+                btn.title = e.message;
+                alert('Synchronisation impossible pour ' + p.riot_id + ' : ' + e.message);
+            }
         }
 
         function selectPlayer(riotId) {
