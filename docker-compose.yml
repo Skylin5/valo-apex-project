@@ -1,0 +1,38 @@
+services:
+  oracle-db:
+    image: gvenzl/oracle-free:23-slim
+    container_name: valo-oracle-db
+    environment:
+      - ORACLE_PASSWORD=OraclePassword123
+      - APP_USER=valo_app
+      - APP_USER_PASSWORD=ValoPassword123
+    ports:
+      - "1521:1521"
+      - "8080:8080"
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+      - ./init_db:/container-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+
+  valo-sync-api:
+    build: ./python_sync
+    container_name: valo-sync-api
+    depends_on:
+      oracle-db:
+        condition: service_healthy
+    environment:
+      - DB_USER=valo_app
+      - DB_PASSWORD=ValoPassword123
+      - DB_DSN=oracle-db:1521/FREEPDB1
+      - HENRIKDEV_API_KEY=${HENRIKDEV_API_KEY:-HDEV-REMPLACE-MOI}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./python_sync:/app
+
+volumes:
+  oracle_data:
