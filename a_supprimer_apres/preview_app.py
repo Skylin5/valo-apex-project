@@ -361,8 +361,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             WHERE LOWER(riot_id) = LOWER(:p)
         """, {"p": selected_player})
 
+        if not coach_rows:
+            print(f"[COACH] Aucune ligne dans v_apex_coach_ia pour {selected_player} : rang réel affiché à la place.")
         coach = coach_rows[0] if coach_rows else {
-            "rang_predit_ml": "3 - Bronze",
+            "rang_predit_ml": p_info.get("rang_actuel") or "Non estimé",
             "axe_viseur": "AXE N°1 (VISEUR) : Travaille le placement de viseur en Deathmatch.",
             "axe_positionnement": "AXE N°2 (POSITIONNEMENT) : Améliore tes prises d'angles pour réduire les dégâts reçus.",
             "axe_survie": "AXE N°3 (SURVIE) : Reste avec tes alliés pour assurer les trades (KAST)."
@@ -458,7 +460,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             "display_riot_id": display_riot_id,
             "ptype": ptype,
             "badge_class": badge_class,
-            "rank_label": coach.get("rang_predit_ml"),
+            "rank_label": p_info.get("rang_actuel"),
             "level": p_info.get("niveau_compte"),
             "total_players_cnt": total_players_cnt,
             "st": st,

@@ -354,7 +354,7 @@ TEMPLATE = r"""<!DOCTYPE html>
                 </div>
                 <div class="rank-pill">
                     <div>
-                        <div class="eyebrow">Palier estimé (Random Forest)</div>
+                        <div class="eyebrow">Rang actuel</div>
                         <b>__RANK__</b>
                     </div>
                 </div>
@@ -420,6 +420,7 @@ TEMPLATE = r"""<!DOCTYPE html>
                 <div class="card">
                     <h3 class="section-title">Plan d'entraînement</h3>
                     <div class="coach-rank">
+                        <span class="eyebrow">Niveau de jeu estimé par l'IA d'après tes stats</span>
                         <span class="rank-pill"><b>__COACH_RANK__</b></span>
                     </div>
                     <div class="advice a1"><b>Précision</b>__AXE1__</div>
